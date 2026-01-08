@@ -1,0 +1,128 @@
+"""
+LLM service for generating AI responses, summaries, and recommendations
+"""
+import json
+import os
+import requests
+from typing import Dict, Optional
+from config import USE_GEMINI, GEMINI_API_KEY, OPENROUTER_API_KEY, OPENROUTER_URL
+
+
+class LLMService:
+    """Service for interacting with LLMs"""
+    
+    def __init__(self):
+        if USE_GEMINI and GEMINI_API_KEY:
+            try:
+                # Use the newer google-genai package
+                import google.genai as genai
+                self.client = genai.Client(api_key=GEMINI_API_KEY)
+                self.use_gemini = True
+            except ImportError:
+                # Try the new package if deprecated isn't available
+                try:
+                    import google.genai as genai
+                    self.client = genai.Client(api_key=GEMINI_API_KEY)
+                    self.use_gemini = True
+                except ImportError:
+                    raise Exception("Either google-genai or google-generativeai must be installed. Install with: pip install google-generativeai")
+        else:
+            self.use_gemini = False
+            self.api_key = OPENROUTER_API_KEY
+            self.api_url = OPENROUTER_URL
+
+    def _call_gemini(self, prompt: str) -> str:
+        """Call Gemini API"""
+        try:
+            # Use the model for the deprecated API
+            response = self.model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            raise Exception(f"Gemini API error: {str(e)}")
+
+    def _call_openrouter(self, prompt: str) -> str:
+        """Call OpenRouter API"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "openai/gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            response = requests.post(self.api_url, headers=headers, json=data, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+            return result['choices'][0]['message']['content'].strip()
+        except Exception as e:
+            raise Exception(f"OpenRouter API error: {str(e)}")
+
+    def _call_llm(self, prompt: str) -> str:
+        """Call LLM (Gemini or OpenRouter)"""
+        if self.use_gemini:
+            return self._call_gemini(prompt)
+        else:
+            return self._call_openrouter(prompt)
+
+    def generate_user_response(self, rating: int, review_text: str) -> str:
+        """Generate AI response for user after submission"""
+        prompt = f"""A customer submitted a {rating}-star review for a restaurant. 
+
+Review: "{review_text}"
+
+Generate a brief, professional, and empathetic response (2-3 sentences) that:
+- Acknowledges their feedback
+- Shows appreciation for their input
+- Is appropriate for the rating level
+
+Response:"""
+        
+        try:
+            response = self._call_llm(prompt)
+            print(f"DEBUG: LLM User Response Success: {response[:100]}...")  # Debug line
+            return response[:500]  # Limit length
+        except Exception as e:
+            print(f"DEBUG: LLM User Response Error: {str(e)}")  # Debug line
+            return f"Thank you for your feedback. We appreciate your input and will use it to improve our service."
+
+    def generate_summary(self, rating: int, review_text: str) -> str:
+        """Generate AI summary of the review"""
+        prompt = f"""Summarize this {rating}-star restaurant review in 1-2 sentences, highlighting the key points:
+
+Review: "{review_text}"
+
+Summary:"""
+        
+        try:
+            response = self._call_llm(prompt)
+            print(f"DEBUG: LLM Summary Success: {response[:100]}...")  # Debug line
+            return response[:300]  # Limit length
+        except Exception as e:
+            print(f"DEBUG: LLM Summary Error: {str(e)}")  # Debug line
+            return f"{rating}-star review: {review_text[:200]}..."
+
+    def generate_recommended_actions(self, rating: int, review_text: str) -> str:
+        """Generate recommended actions for admin based on review"""
+        prompt = f"""Based on this {rating}-star restaurant review, suggest 2-3 specific, actionable recommendations for the restaurant management:
+
+Review: "{review_text}"
+
+Provide recommendations as a bulleted list. Be specific and practical.
+
+Recommendations:"""
+        
+        try:
+            response = self._call_llm(prompt)
+            print(f"DEBUG: LLM Recommendations Success: {response[:100]}...")  # Debug line
+            return response[:500]  # Limit length
+        except Exception as e:
+            print(f"DEBUG: LLM Recommendations Error: {str(e)}")  # Debug line
+            if rating <= 2:
+                return "• Follow up with customer to address concerns\n• Review service protocols\n• Investigate specific issues mentioned"
+            elif rating == 3:
+                return "• Identify areas for improvement\n• Consider customer feedback in planning"
+            else:
+                return "• Maintain current service standards\n• Share positive feedback with staff\n• Consider highlighting strengths in marketing"
+
+
